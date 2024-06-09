@@ -40,16 +40,44 @@ import importlib.metadata
 import pathlib
 import shutil
 import sys
+import sentry_sdk
 from distutils.util import strtobool
 
 import dask
 import dask.distributed
 import structlog
 from docopt import docopt
-
 from nwp_consumer import internal
 from nwp_consumer.internal import config
 from nwp_consumer.internal.service import NWPConsumerService
+
+
+def traces_sampler(sampling_context):
+    """
+    Filter tracing for sentry logs.
+
+    Examine provided context data (including parent decision, if any)
+    along with anything in the global namespace to compute the sample rate
+    or sampling decision for this transaction
+    """
+
+    if os.getenv("ENVIRONMENT") == "local":
+        return 0.0
+    elif "error" in sampling_context["transaction_context"]["name"]:
+        # These are important - take a big sample
+        return 1.0
+    elif sampling_context["parent_sampled"] is True:
+        # These aren't something worth tracking - drop all transactions like this
+        return 0.0
+    else:
+        # Default sample rate
+        return 0.05
+    
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    environment=os.getenv("ENVIRONMENT", "local"),
+    traces_sampler=traces_sampler,
+)
 
 __version__ = "local"
 
